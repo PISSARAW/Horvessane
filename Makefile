@@ -1,4 +1,10 @@
-.PHONY: demo test
+.PHONY: demo test demo-suite test-suite
+
+demo-suite:
+	python3 integration/run.py
+
+test-suite:
+	python3 integration/test_pipeline.py
 
 demo:
 	python3 -m horvessane examples/incident.json

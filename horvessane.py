@@ -1,6 +1,7 @@
 """Ordre partiel à partir de fenêtres d'horloge et de précédences attestées."""
 import argparse
 import json
+import re
 from collections import deque
 from graphlib import TopologicalSorter
 from itertools import combinations
@@ -84,13 +85,48 @@ def analyze(case):
     return {"status": "consistent", "windows": windows, "relations": relations}
 
 
+def join_evidence(packets):
+    """Relier une observation de chaque producteur dans un unique exercice."""
+    sources = {"mandoryve": {"access", "verified", "unavailable"}, "revaskel": {"document"}}
+    received = set()
+    case_id = None
+    events = []
+    for packet in packets:
+        source = packet["source"]
+        if packet["schema"] != "evidence.v1" or source not in sources or source in received:
+            raise ValueError("version ou producteur inattendu")
+        received.add(source)
+        if not isinstance(packet["case_id"], str) or not packet["case_id"].strip():
+            raise ValueError("identifiant d’exercice vide")
+        if case_id is not None and packet["case_id"] != case_id:
+            raise ValueError("observations de deux exercices différents")
+        case_id = packet["case_id"]
+        if not isinstance(packet["events"], list) or not packet["events"]:
+            raise ValueError("lot vide")
+        for event in packet["events"]:
+            if (not re.fullmatch(source + r"-[1-9][0-9]*", event["id"])
+                    or event["kind"] not in sources[source] or not isinstance(event["facts"], dict)):
+                raise ValueError("observation incompatible")
+            events.append({**event, "source": source})
+    if received != sources.keys():
+        raise ValueError("lot Revaskel ou Mandoryve manquant")
+    timeline = analyze({"events": events})
+    return {"schema": "timeline.v1", "case_id": case_id, "events": events, "timeline": timeline}
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("case", type=Path)
+    parser.add_argument("case", type=Path, nargs="?")
+    parser.add_argument("--join", type=Path, nargs=2, metavar=("LOT_A", "LOT_B"))
     args = parser.parse_args()
+    if bool(args.case) == bool(args.join):
+        parser.error("fournir un dossier ou deux lots avec --join")
     try:
-        report = analyze(json.loads(args.case.read_text()))
+        if args.join:
+            report = join_evidence([json.loads(p.read_text()) for p in args.join])
+        else:
+            report = analyze(json.loads(args.case.read_text()))
     except (OSError, ValueError, KeyError, TypeError) as exc:
         parser.exit(2, f"Dossier invalide ({exc})\n")
     print(json.dumps(report, indent=2, ensure_ascii=False))
-    raise SystemExit(int(report["status"] == "contradiction"))
+    raise SystemExit(int(report.get("timeline", report)["status"] == "contradiction"))
