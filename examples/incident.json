@@ -1,0 +1,29 @@
+{
+  "events": [
+    {
+      "id": "auth",
+      "source": "windows",
+      "time_s": 12,
+      "uncertainty_s": 5
+    },
+    {
+      "id": "request",
+      "source": "api",
+      "time_s": 9,
+      "uncertainty_s": 4
+    },
+    {
+      "id": "receipt",
+      "source": "api",
+      "time_s": 14,
+      "uncertainty_s": 3
+    }
+  ],
+  "anchors": [
+    {
+      "before": "auth",
+      "after": "receipt",
+      "evidence": "trace-42 : remise du jeton avant son acquittement"
+    }
+  ]
+}
