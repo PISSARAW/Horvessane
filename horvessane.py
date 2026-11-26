@@ -27,8 +27,7 @@ def path_between(graph, source, target):
     return None
 
 
-def analyze(case):
-    """Les bornes inclusives sont des secondes sur une même échelle."""
+def event_windows(case):
     windows = {}
     for event in case["events"]:
         key = event["id"]
@@ -38,26 +37,37 @@ def analyze(case):
         if type(clock) is not int or type(error) is not int or error < 0:
             raise ValueError("temps entier et incertitude positive ou nulle requis")
         windows[key] = (clock - error, clock + error)
+    return windows
 
+
+def temporal_graph(windows, pairs):
     graph = {key: {} for key in windows}
-    pairs = list(combinations(windows, 2))
     for a, b in pairs:
         if windows[a][1] < windows[b][0]:
             graph[a][b] = "bornes disjointes"
         elif windows[b][1] < windows[a][0]:
             graph[b][a] = "bornes disjointes"
+    return graph
+
+
+def add_anchors(graph, case):
     for edge in case.get("anchors", []):
         a, b, evidence = edge["before"], edge["after"], edge["evidence"]
         if a not in graph or b not in graph or a == b or not isinstance(evidence, str) or not evidence.strip():
             raise ValueError("ancre invalide")
         graph[a][b] = evidence
 
+
+def find_cycle(graph):
     for a, neighbors in graph.items():
         for b, evidence in neighbors.items():
             back = path_between(graph, b, a)
             if back is not None:
                 return {"status": "contradiction", "cycle": [[a, b, evidence], *back]}
+    return None
 
+
+def check_bounds(graph, windows):
     # Une ancre impose un ordre strict, même lorsque deux bornes se touchent.
     ordering = TopologicalSorter()
     for a, neighbors in graph.items():
@@ -74,7 +84,17 @@ def analyze(case):
                 witness[b] = [*witness[a], [a, b, evidence]]
             if earliest[b] > (windows[b][1], False):
                 return {"status": "contradiction", "bounds": windows, "path": witness[b]}
+    return None
 
+
+def analyze(case):
+    windows = event_windows(case)
+    pairs = list(combinations(windows, 2))
+    graph = temporal_graph(windows, pairs)
+    add_anchors(graph, case)
+    conflict = find_cycle(graph) or check_bounds(graph, windows)
+    if conflict:
+        return conflict
     relations = []
     for a, b in pairs:
         path = path_between(graph, a, b) or path_between(graph, b, a)
@@ -83,6 +103,23 @@ def analyze(case):
         else:
             relations.append({"undetermined": [a, b]})
     return {"status": "consistent", "windows": windows, "relations": relations}
+
+
+def packet_events(packet, kinds):
+    source = packet["source"]
+    for event in packet["events"]:
+        if (not re.fullmatch(source + r"-[1-9][0-9]*", event["id"])
+                or event["kind"] not in kinds or not isinstance(event["facts"], dict)):
+            raise ValueError("observation incompatible")
+        yield {**event, "source": source}
+
+
+def same_case(current, previous):
+    if not isinstance(current, str) or not current.strip():
+        raise ValueError("identifiant d’exercice vide")
+    if previous is not None and current != previous:
+        raise ValueError("observations de deux exercices différents")
+    return current
 
 
 def join_evidence(packets):
@@ -96,25 +133,17 @@ def join_evidence(packets):
         if packet["schema"] != "evidence.v1" or source not in sources or source in received:
             raise ValueError("version ou producteur inattendu")
         received.add(source)
-        if not isinstance(packet["case_id"], str) or not packet["case_id"].strip():
-            raise ValueError("identifiant d’exercice vide")
-        if case_id is not None and packet["case_id"] != case_id:
-            raise ValueError("observations de deux exercices différents")
-        case_id = packet["case_id"]
+        case_id = same_case(packet["case_id"], case_id)
         if not isinstance(packet["events"], list) or not packet["events"]:
             raise ValueError("lot vide")
-        for event in packet["events"]:
-            if (not re.fullmatch(source + r"-[1-9][0-9]*", event["id"])
-                    or event["kind"] not in sources[source] or not isinstance(event["facts"], dict)):
-                raise ValueError("observation incompatible")
-            events.append({**event, "source": source})
+        events.extend(packet_events(packet, sources[source]))
     if received != sources.keys():
         raise ValueError("lot Revaskel ou Mandoryve manquant")
     timeline = analyze({"events": events})
     return {"schema": "timeline.v1", "case_id": case_id, "events": events, "timeline": timeline}
 
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("case", type=Path, nargs="?")
     parser.add_argument("--join", type=Path, nargs=2, metavar=("LOT_A", "LOT_B"))
@@ -130,3 +159,7 @@ if __name__ == "__main__":
         parser.exit(2, f"Dossier invalide ({exc})\n")
     print(json.dumps(report, indent=2, ensure_ascii=False))
     raise SystemExit(int(report.get("timeline", report)["status"] == "contradiction"))
+
+
+if __name__ == "__main__":
+    main()

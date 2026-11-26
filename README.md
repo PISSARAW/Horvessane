@@ -72,3 +72,7 @@ SUITE_REPOS=.. make test-suite
 ```
 
 Avec tes propres données, fournis `--snapshot CHEMIN`, `--mandate FICHIER`, `--case-id ID`, `--restore-time SECONDES` et `--uncertainty SECONDES`. Les heures des deux observations doivent partager la même origine. Le budget est compris entre 1 et le nombre de constats. La démo utilise une priorité fixe et un tirage aléatoire reproductible. L’ordre temporel documente le contexte du contrôle et ne suffit pas à établir la cause de l’écart.
+
+## Contribuer
+
+Activer les contrôles avant le premier commit avec `make setup`. Consulter [la documentation](docs/README.md) et [le guide de contribution](docs/guides/contribuer.md).

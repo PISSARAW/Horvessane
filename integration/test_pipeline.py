@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from run import build_revaskel, exercise, prepare_peers
+from run import Clock, Inputs, Review, Scenario, Tools, build_revaskel, exercise, prepare_peers
 
 
 class PipelineTests(unittest.TestCase):
@@ -29,10 +29,9 @@ class PipelineTests(unittest.TestCase):
         mandate = self.work / "mandate.json"
         mandate.write_text(json.dumps(self.mandate))
         self.out = self.work / "out"
-        return exercise(self.peers, self.binary, self.out,
-                        snapshot=self.peers["Revaskel"] / "examples" / snapshot,
-                        mandate=mandate, case_id="confidential-case", restore_time=when,
-                        uncertainty=1, budget=2, seed=42)
+        inputs = Inputs(self.peers["Revaskel"] / "examples" / snapshot, mandate)
+        scenario = Scenario(inputs, Clock("confidential-case", when, 1), Review(2, 42))
+        return exercise(Tools(self.peers, self.binary), self.out, scenario)
 
     def read(self, name):
         return json.loads((self.out / name).read_text())
