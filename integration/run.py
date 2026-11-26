@@ -5,6 +5,7 @@ import os
 import subprocess
 import sys
 import tempfile
+from typing import NamedTuple
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -35,7 +36,38 @@ def build_revaskel(peers, work):
     return binary
 
 
-def exercise(peers, binary, out, *, snapshot, mandate, case_id, restore_time, uncertainty, budget, seed):
+class Inputs(NamedTuple):
+    snapshot: Path
+    mandate: Path
+
+
+class Clock(NamedTuple):
+    case_id: str
+    restore_time: int
+    uncertainty: int
+
+
+class Review(NamedTuple):
+    budget: int
+    seed: int
+
+
+class Scenario(NamedTuple):
+    inputs: Inputs
+    clock: Clock
+    review: Review
+
+
+class Tools(NamedTuple):
+    peers: dict
+    binary: Path
+
+
+def exercise(tools, out, scenario):
+    peers, binary = tools
+    snapshot, mandate = scenario.inputs
+    case_id, restore_time, uncertainty = scenario.clock
+    budget, seed = scenario.review
     # Répertoire neuf par exercice. Les fichiers 01, 02 et 03 gardent des données privées.
     out.mkdir(mode=0o700)
     def stage(repo, filename, command):
@@ -85,11 +117,11 @@ def main():
             parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=parent, prefix=".exercise-") as staging:
             out = Path(staging) / "result"
-            result = exercise(peers, binary, out,
-                              snapshot=args.snapshot or peers["Revaskel"] / "examples/partial",
-                              mandate=args.mandate or peers["Mandoryve"] / "examples/group.json",
-                              case_id=args.case_id, restore_time=args.restore_time,
-                              uncertainty=args.uncertainty, budget=args.budget, seed=args.seed)
+            inputs = Inputs(args.snapshot or peers["Revaskel"] / "examples/partial",
+                           args.mandate or peers["Mandoryve"] / "examples/group.json")
+            scenario = Scenario(inputs, Clock(args.case_id, args.restore_time, args.uncertainty),
+                                Review(args.budget, args.seed))
+            result = exercise(Tools(peers, binary), out, scenario)
             if args.save_under:
                 # Le nom unique empêche deux exécutions concurrentes de partager leurs traces.
                 dest = parent / Path(staging).name.removeprefix(".")
